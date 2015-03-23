@@ -1,0 +1,107 @@
+from enaml.widgets.api import *
+from enaml.layout.api import *
+from enaml.core.api import *
+from enaml.stdlib.fields import FloatField, IntField
+from dataportal.replay.core import TimerButton
+from controlsui.model import Model
+
+
+class ProgrammaticButton(PushButton):
+    # copied from dataportal.replay.core
+    clicked = d_(Event(bool), writable=True)
+    toggled = d_(Event(bool), writable=True)
+
+
+class TimerButton(ProgrammaticButton):
+    # copied from dataportal.replay.core
+    timer = d_(Typed(Timer))
+    checkable = True
+
+    @observe('checked')
+    def checked_changed(self, changed):
+        if self.checked:
+            self.timer.start()
+        else:
+            self.timer.stop()
+
+enamldef Main(MainWindow):
+    attr model = Model()
+    Container:
+        DockArea:
+            layout = HSplitLayout(
+                'scan controls',
+                    VSplitLayout(
+                        HSplitLayout('primary image', 'primary image controls',
+                            'primary image info'),
+#                        HSplitLayout('secondary image', 'secondary image controls',
+#                            'secondary image info')
+                    )
+            )
+            DockItem:
+                name = 'scan controls'
+                title = 'Scan Controls'
+                Container:
+                    constraints = [vbox(hbox(delay_info, delay),
+                                        hbox(lump_info, lump),
+                                        timer_btn, reset_btn),
+                                   align('v_center', delay_info, delay),
+                                   align('v_center', lump_info, lump)]
+                    Label: delay_info:
+                        text = "Time between updates"
+                    SpinBox: delay:
+                        minimum = 10
+                        maximum = 100000000
+                        value := model.delay
+                    Label: lump_info:
+                        text = "Datapoints per update"
+                    IntField: lump:
+                        value := model.points_per_update
+                    TimerButton: timer_btn:
+                        text = 'Start raster scan'
+                        timer = the_timer
+                        checked := model.scan_running
+                    Timer: the_timer:
+                        interval << model.delay
+                        single_shot = False
+                        timeout ::
+                            model.new_data()
+                    PushButton: reset_btn:
+                        text = "Reset scan"
+                        clicked ::
+                            model.reset_scan()
+            DockItem:
+                name = 'primary image'
+                title = 'Primary Image'
+                Container:
+                    MPLCanvas:
+                        figure << model._fig
+
+            DockItem:
+                name = 'primary image controls'
+                title = 'Primary Image Controls'
+                Container:
+                    Form:
+                        Label:
+                            text = 'min energy to plot'
+                        FloatField: min:
+                            minimum = 0.
+                            maximum << model.energy[-1]
+                            value := model.emin
+                        Label:
+                            text = 'min energy to plot'
+                        FloatField: max:
+                            minimum = 0.
+                            maximum << model.energy[-1]
+                            value := model.emax
+            DockItem:
+                name = 'primary image info'
+                title = 'Primary Image Info'
+#            DockItem:
+#                name = 'secondary image'
+#                title = 'Secondary Image'
+#            DockItem:
+#                name = 'secondary image controls'
+#                title = 'Secondary Image Controls'
+#            DockItem:
+#                name = 'secondary image info'
+#                title = 'Secondary Image Info'

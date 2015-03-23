@@ -12,4 +12,5 @@ setup(
     version='0.0.0',
     author='Brookhaven National Laboratory',
     packages=['controlsui'],
+    requires=['numpy', 'atom', 'enaml', 'matplotlib', 'h5py']
 )
