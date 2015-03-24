@@ -1,6 +1,8 @@
 from enaml.widgets.api import *
 from enaml.layout.api import *
 from enaml.core.api import *
+from atom.api import Typed, observe, Event
+from enaml.core.declarative import d_
 from enaml.stdlib.fields import FloatField, IntField
 from dataportal.replay.core import TimerButton
 from controlsui.model import Model
@@ -73,26 +75,88 @@ enamldef Main(MainWindow):
                 name = 'primary image'
                 title = 'Primary Image'
                 Container:
-                    MPLCanvas:
+                    constraints = [
+                        vbox(
+                            hbox(check, spacer),
+                            canvas
+                        ),
+                    ]
+                    CheckBox: check:
+                        text = 'Toolbar Visible'
+                        checked := canvas.toolbar_visible
+                    MPLCanvas: canvas:
                         figure << model._fig
+                        toolbar_visible = False
 
             DockItem:
                 name = 'primary image controls'
                 title = 'Primary Image Controls'
                 Container:
-                    Form:
+                    constraints = [
+                        vbox(
+                            hbox(lbl_min, min, min_ev, spacer),
+                            hbox(lbl_max, max, max_ev, spacer),
+                            form,
+                        ),
+                        align('v_center', lbl_min, min, min_ev),
+                        align('v_center', lbl_max, max, max_ev)
+                    ]
+                    Label: lbl_min:
+                        text = 'min energy to plot'
+                    FloatField: min:
+                        minimum = 0.
+                        maximum << model.energy[-1]
+                        value := model.emin
+                    Label: min_ev:
+                        text = 'ev'
+                    Label: lbl_max:
+                        text = 'max energy to plot'
+                    FloatField: max:
+                        minimum = 0.
+                        maximum << model.energy[-1]
+                        value := model.emax
+                    Label: max_ev:
+                        text = 'ev'
+                    Form: form:
                         Label:
-                            text = 'min energy to plot'
-                        FloatField: min:
-                            minimum = 0.
-                            maximum << model.energy[-1]
-                            value := model.emin
+                            text = 'grayscale_roi'
+                        ComboBox: rois:
+                            items << model.rois.keys()
+                            selected_item ::
+                                print('selected_item: %s' % selected_item)
+                                print('self.selected_item: %s' % self.selected_item)
+                                model.set_roi(self.selected_item)
                         Label:
-                            text = 'min energy to plot'
-                        FloatField: max:
+                            text = 'red channel roi'
+                        ComboBox: rois_r:
+                            items << model.rois.keys()
+                            selected_item ::
+                                print('selected_item: %s' % selected_item)
+                                print('self.selected_item: %s' % self.selected_item)
+                                model.set_channel_roi(self.selected_item, 'red')
+                        Label:
+                            text = 'blue channel roi'
+                        ComboBox: rois_g:
+                            items << model.rois.keys()
+                            selected_item ::
+                                print('selected_item: %s' % selected_item)
+                                print('self.selected_item: %s' % self.selected_item)
+                                model.set_channel_roi(self.selected_item, 'green')
+                        Label:
+                            text = 'green channel roi'
+                        ComboBox: rois_b:
+                            items << model.rois.keys()
+                            selected_item ::
+                                print('selected_item: %s' % selected_item)
+                                print('self.selected_item: %s' % self.selected_item)
+                                model.set_channel_roi(self.selected_item, 'blue')
+                        Label:
+                            text = 'alpha level (0 <= a <=1)'
+                        FloatField:
                             minimum = 0.
-                            maximum << model.energy[-1]
-                            value := model.emax
+                            maximum = 1.
+                            value := model.alpha
+
             DockItem:
                 name = 'primary image info'
                 title = 'Primary Image Info'
