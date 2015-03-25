@@ -156,6 +156,11 @@ enamldef Main(MainWindow):
                             minimum = 0.
                             maximum = 1.
                             value := model.alpha
+                        Label:
+                            text = 'figure aspect ratio'
+                        ComboBox:
+                            items << list(Model.cs_aspect.items)
+                            selected_item >> model.cs_aspect
 
             DockItem:
                 name = 'primary image info'

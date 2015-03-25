@@ -1,6 +1,7 @@
 import enaml
 from enaml.qt.qt_application import QtApplication
-from atom.api import Atom, observe, Typed, Int, List, Float, Bool, Dict, Coerced
+from atom.api import (Atom, observe, Typed, Int, List, Float, Bool, Dict,
+                      Coerced, Enum)
 import numpy as np
 import os
 import h5py
@@ -45,6 +46,15 @@ class Model(Atom):
     # display properties
     emin = Coerced(float)
     emax = Coerced(float)
+    emin_red = Coerced(float)
+    emax_red = Coerced(float)
+    emin_blue = Coerced(float)
+    emax_blue = Coerced(float)
+    emin_green = Coerced(float)
+    emax_green = Coerced(float)
+
+    cs_aspect = Enum('equal', 'auto')
+
     _datapoints = List()
     _current_step = Int(0)
 
@@ -90,13 +100,16 @@ class Model(Atom):
         self.live_counts = np.zeros(self.counts.shape)
         self.live_counts[:] = np.nan
         self.rgba = np.zeros(self.counts.shape[:2] + (4,))
-        self.rgba[:] = 0
+        self.rgba[:, :, :-1] = np.nan
 
     @observe('emin', 'emax')
     def _energy_changed(self, changed):
         # self.cs.update_limit_func(cs2d.absolute_limit_factory((self.emin, self.emax)))
         print('energy changed: {}'.format(changed))
         self._recompute_image()
+    @observe('cs_aspect')
+    def _aspect_changed(self, changed):
+        self.cs._im_ax.set_aspect(changed['value'])
 
     def reset_scan(self):
         """Helper function used entirely for testing/debugging/demoing the
@@ -106,7 +119,8 @@ class Model(Atom):
         if prev_state:
             self.scan_running = False
         self.live_counts[:] = np.nan
-        self.rgba[:] = 0
+        self.rgba[:, :, :-2] = np.nan
+        print self.rgba
         self._current_step = 0
         if prev_state:
             self.scan_running = True
@@ -124,11 +138,12 @@ class Model(Atom):
             self._current_step += 1
 
         self._recompute_image()
+        # update the overlay for all channels
+        self._recompute_overlay()
 
     def _recompute_image(self):
-        energy_indices = np.where(np.logical_and(self.energy > self.emin,
-                                                 self.energy < self.emax))[0]
-        data = self.live_counts[:, :, energy_indices]
+        energy_mask = (self.energy > self.emin) & (self.energy < self.emax)
+        data = self.live_counts[:, :, energy_mask]
         plottable = np.sum(data, axis=2)
 
         self.cs.update_image(plottable)
@@ -152,35 +167,66 @@ class Model(Atom):
         self.emin = energies[0]
         self.emax = energies[1]
 
-    _channel_map = {'red': 0, 'green': 1, 'blue': 2}
+    _CHANNEL_MAP = {'red': 0, 'green': 1, 'blue': 2}
+    _ENERGY_MAP = {'red': {'min': 'emin_red', 'max': 'emax_red'},
+                   'blue': {'min': 'emin_blue', 'max': 'emax_blue'},
+                   'green': {'min': 'emin_green', 'max': 'emax_green'},}
 
     def set_channel_roi(self, new_roi, channel):
         energies = self.rois[new_roi]
         emin = energies[0]
         emax = energies[1]
 
-        energy_indices = np.where(np.logical_and(self.energy > emin,
-                                                 self.energy < emax))[0]
-        color_data = self.live_counts[:, :, energy_indices]
-        plottable = np.sum(color_data, axis=2)
-        plottable -= np.nanmin(plottable)
-        plottable /= np.nanmax(plottable)
+        # suppress the notifications so as to trigger the expensive
+        # recomputing once
+        with self.suppress_notifications():
+            setattr(self, self._ENERGY_MAP[channel]['min'], emin)
+            setattr(self, self._ENERGY_MAP[channel]['max'], emax)
 
-        self.rgba[:, :, self._channel_map[channel]] = plottable
+        self._recompute_overlay(channels=[channel])
+
+
+    @observe('emin_red', 'emax_red', 'emin_blue', 'emax_blue', 'emin_green',
+             'emax_green')
+    def _rgb_energy_updated(self, changed):
+        self._recompute_overlay(channels=[changed['name'].split('_')[1]])
+
+    def _recompute_overlay(self, channels=None):
+        """
+
+        Helper function to recompute the overlay for one or more of the
+        overlay channels
+
+        Parameters
+        ----------
+        channel : {'red', 'green', 'blue'}, optional
+            list of one or many of the above options
+        """
+        # recompute the overlay for all channels
+        if channels is None:
+            channels = list(self._CHANNEL_MAP.keys())
+
+        for channel in channels:
+            emin = getattr(self, self._ENERGY_MAP[channel]['min'])
+            emax = getattr(self, self._ENERGY_MAP[channel]['max'])
+            energy_indices = np.where(np.logical_and(self.energy > emin,
+                                                     self.energy < emax))[0]
+            color_data = self.live_counts[:, :, energy_indices]
+            plottable = np.sum(color_data, axis=2)
+            min = np.nanmin(plottable)
+            max = np.nanmax(plottable)
+            plottable = (plottable - min) / (max - min)
+            # assign the plottable data to the correct channel
+            self.rgba[:, :, self._CHANNEL_MAP[channel]] = plottable
+        # trigger the cross section mpl object to update the overlay
         self.cs.update_overlay(self.rgba)
+
 
     @observe('alpha')
     def _alpha_changed(self, changed):
-        if changed['type'] == 'create':
-            return
         self.rgba[:, :, 3] = self.alpha
         self.cs.update_overlay(self.rgba)
         print self.rgba
-
-    def _compute_rgba_overlay(self, channel):
-        energy_range = self.channel_rois.get(channel, None)
-
-
 
 
 if __name__ == "__main__":
