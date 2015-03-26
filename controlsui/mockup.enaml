@@ -1,7 +1,7 @@
 from enaml.widgets.api import *
 from enaml.layout.api import *
 from enaml.core.api import *
-from atom.api import Typed, observe, Event
+from atom.api import Typed, observe, Event, set_default
 from enaml.core.declarative import d_
 from enaml.stdlib.fields import FloatField, IntField
 from dataportal.replay.core import TimerButton
@@ -26,6 +26,39 @@ class TimerButton(ProgrammaticButton):
         else:
             self.timer.stop()
 
+enamldef ColorChannel(Container):
+    attr color
+    constraints = [
+        vbox(
+            hbox(lbl, rois),
+            hbox(alpha0, alpha33, alpha66, alpha100, spacer),
+        ),
+        align('v_center', lbl, rois),
+    ]
+    Label: lbl:
+        text = '{} channel roi'.format(color)
+    ComboBox: rois:
+        items << model.rois.keys()
+        hug_width = 'ignore'
+        selected_item ::
+            model.set_channel_roi(self.selected_item, color)
+    PushButton: alpha0:
+        text = 'Alpha 0'
+        clicked ::
+            model.alpha = 0.
+    PushButton: alpha33:
+        text = 'Alpha 0.33'
+        clicked ::
+            model.alpha = 0.33
+    PushButton: alpha66:
+        text = 'Alpha 0.66'
+        clicked ::
+            model.alpha = 0.66
+    PushButton: alpha100:
+        text = 'Alpha 1'
+        clicked ::
+            model.alpha = 1.
+
 enamldef Main(MainWindow):
     attr model = Model()
     Container:
@@ -33,7 +66,10 @@ enamldef Main(MainWindow):
             layout = HSplitLayout(
                 'scan controls',
                     VSplitLayout(
-                        HSplitLayout('primary image', 'primary image controls',
+                        HSplitLayout(
+                            VSplitLayout(
+                                'primary image', 'cursor energy'),
+                            'primary image controls',
                             'primary image info'),
 #                        HSplitLayout('secondary image', 'secondary image controls',
 #                            'secondary image info')
@@ -42,6 +78,7 @@ enamldef Main(MainWindow):
             DockItem:
                 name = 'scan controls'
                 title = 'Scan Controls'
+                stretch = 0
                 Container:
                     constraints = [vbox(hbox(delay_info, delay),
                                         hbox(lump_info, lump),
@@ -75,28 +112,30 @@ enamldef Main(MainWindow):
                 name = 'primary image'
                 title = 'Primary Image'
                 Container:
-                    constraints = [
-                        vbox(
-                            hbox(check, spacer),
-                            canvas
-                        ),
-                    ]
-                    CheckBox: check:
-                        text = 'Toolbar Visible'
-                        checked := canvas.toolbar_visible
+                    MPLCanvas: im_canvas:
+                        figure << model._fig_cs
+                        toolbar_visible = True
+            DockItem:
+                name = 'cursor energy'
+                title = 'Cursor Energy'
+                Container:
                     MPLCanvas: canvas:
-                        figure << model._fig
-                        toolbar_visible = False
+                        figure << model._fig_line
+                        toolbar_visible = True
 
             DockItem:
                 name = 'primary image controls'
                 title = 'Primary Image Controls'
+                stretch = 0
                 Container:
                     constraints = [
                         vbox(
                             hbox(lbl_min, min, min_ev, spacer),
                             hbox(lbl_max, max, max_ev, spacer),
                             form,
+                            red,
+                            green,
+                            blue,
                         ),
                         align('v_center', lbl_min, min, min_ev),
                         align('v_center', lbl_max, max, max_ev)
@@ -123,33 +162,7 @@ enamldef Main(MainWindow):
                         ComboBox: rois:
                             items << model.rois.keys()
                             selected_item ::
-                                print('selected_item: %s' % selected_item)
-                                print('self.selected_item: %s' % self.selected_item)
                                 model.set_roi(self.selected_item)
-                        Label:
-                            text = 'red channel roi'
-                        ComboBox: rois_r:
-                            items << model.rois.keys()
-                            selected_item ::
-                                print('selected_item: %s' % selected_item)
-                                print('self.selected_item: %s' % self.selected_item)
-                                model.set_channel_roi(self.selected_item, 'red')
-                        Label:
-                            text = 'blue channel roi'
-                        ComboBox: rois_g:
-                            items << model.rois.keys()
-                            selected_item ::
-                                print('selected_item: %s' % selected_item)
-                                print('self.selected_item: %s' % self.selected_item)
-                                model.set_channel_roi(self.selected_item, 'green')
-                        Label:
-                            text = 'green channel roi'
-                        ComboBox: rois_b:
-                            items << model.rois.keys()
-                            selected_item ::
-                                print('selected_item: %s' % selected_item)
-                                print('self.selected_item: %s' % self.selected_item)
-                                model.set_channel_roi(self.selected_item, 'blue')
                         Label:
                             text = 'alpha level (0 <= a <=1)'
                         FloatField:
@@ -161,10 +174,17 @@ enamldef Main(MainWindow):
                         ComboBox:
                             items << list(Model.cs_aspect.items)
                             selected_item >> model.cs_aspect
+                    ColorChannel: red:
+                        color = 'red'
+                    ColorChannel: green:
+                        color = 'green'
+                    ColorChannel: blue:
+                        color = 'blue'
 
             DockItem:
                 name = 'primary image info'
                 title = 'Primary Image Info'
+                stretch = 0
 #            DockItem:
 #                name = 'secondary image'
 #                title = 'Secondary Image'
@@ -174,3 +194,4 @@ enamldef Main(MainWindow):
 #            DockItem:
 #                name = 'secondary image info'
 #                title = 'Secondary Image Info'
+

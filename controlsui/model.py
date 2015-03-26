@@ -8,7 +8,7 @@ import h5py
 import urllib
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
-from matplotlib.image import AxesImage
+from matplotlib.lines import Line2D
 import itertools
 import logging
 from bubblegum.backend.mpl import cross_section_2d as cs2d
@@ -40,7 +40,6 @@ class Model(Atom):
     points_per_update = Int(100)
     scan_running = Bool(False)
     rois = Dict()
-    cs = Typed(cs2d.CSOverlay)
     channel_rois = Dict()
     alpha = Float()
     # display properties
@@ -58,14 +57,37 @@ class Model(Atom):
     _datapoints = List()
     _current_step = Int(0)
 
-    _fig = Typed(Figure)
+    _fig_cs = Typed(Figure)
+    _fig_line = Typed(Figure)
+    _ax_cursor = Typed(Axes)
+    _cursor_artist = Typed(Line2D)
+    _ax_last = Typed(Axes)
+    _last_datapoint_artist = Typed(Line2D)
+
+    cs = Typed(cs2d.CSOverlay)
 
     _energy_ranges_changed = Bool(False)
 
     def __init__(self, delay=None):
         super(Model, self).__init__()
-        self._fig = Figure()
-        self.cs = cs2d.CSOverlay(fig=self._fig)
+        self._fig_line = Figure()
+        self._fig_cs = Figure()
+        # self._fig_line.set_size_inches(4, 4)
+        # set up the cursor line artist
+        self._ax_cursor = self._fig_line.add_subplot(2, 1, 1)
+        self._ax_cursor.set_ylabel('counts')
+        self._ax_cursor.set_xlabel('Energy (eV)')
+        self._cursor_artist, = self._ax_cursor.plot(
+            [], [], '-', label='cursor position')
+        # set up the artist to look at the last datapoint
+        self._ax_last = self._fig_line.add_subplot(2, 1, 2)
+        self._ax_last.set_ylabel('counts')
+        self._ax_last.set_xlabel('Energy (eV)')
+        self._last_datapoint_artist, = self._ax_last.plot(
+            [], [], '-', label='cursor position')
+
+        self.cs = cs2d.CSOverlay(fig=self._fig_cs)
+        self.cs.add_cursor_position_cb(self.new_cursor_position)
 
         root_data = get_root_data()
         self.counts = np.asarray(root_data['xrfmap/detsum/counts'])
@@ -107,9 +129,15 @@ class Model(Atom):
         # self.cs.update_limit_func(cs2d.absolute_limit_factory((self.emin, self.emax)))
         print('energy changed: {}'.format(changed))
         self._recompute_image()
+
     @observe('cs_aspect')
     def _aspect_changed(self, changed):
         self.cs._im_ax.set_aspect(changed['value'])
+
+    @observe('emin_red', 'emax_red', 'emin_blue', 'emax_blue', 'emin_green',
+             'emax_green')
+    def _rgb_energy_updated(self, changed):
+        self._recompute_overlay(channels=[changed['name'].split('_')[1]])
 
     def reset_scan(self):
         """Helper function used entirely for testing/debugging/demoing the
@@ -125,6 +153,25 @@ class Model(Atom):
         if prev_state:
             self.scan_running = True
 
+    def new_cursor_position(self, cc, rr):
+        """Callback that needs to be registered with the cross section widget
+
+        Parameters
+        ----------
+        cc : int
+          column
+        rr : int
+            row
+        """
+        # print('cc, rr: {}, {}'.format(cc, rr))
+        counts = self.live_counts[rr, cc, :]
+        # print('counts shape: {} counts values: {}'.format(counts.shape, counts))
+        self._cursor_artist.set_data(self.energy, counts)
+        self._ax_cursor.relim(visible_only=True)
+        self._ax_cursor.autoscale_view(tight=True)
+        self._ax_cursor.set_title('Cursor position: ({}, {})'.format(cc, rr))
+        self._fig_line.canvas.draw()
+
     def new_data(self):
         new_datapoints = []
         for i in range(self.points_per_update):
@@ -136,6 +183,13 @@ class Model(Atom):
             # print('adding data for (x, y): ({}, {})'.format(x, y))
             self.live_counts[y, x, :] = self.counts[y, x, :]
             self._current_step += 1
+
+        # update the last datapoint artist
+        self._last_datapoint_artist.set_data(self.energy, self.live_counts[y, x, :])
+        self._ax_last.set_title('Last datapoint: ({}, {})'.format(x, y))
+        self._ax_last.relim(visible_only=True)
+        self._ax_last.autoscale_view(tight=True)
+        self._fig_line.canvas.draw()
 
         self._recompute_image()
         # update the overlay for all channels
@@ -185,12 +239,6 @@ class Model(Atom):
 
         self._recompute_overlay(channels=[channel])
 
-
-    @observe('emin_red', 'emax_red', 'emin_blue', 'emax_blue', 'emin_green',
-             'emax_green')
-    def _rgb_energy_updated(self, changed):
-        self._recompute_overlay(channels=[changed['name'].split('_')[1]])
-
     def _recompute_overlay(self, channels=None):
         """
 
@@ -215,7 +263,9 @@ class Model(Atom):
             plottable = np.sum(color_data, axis=2)
             min = np.nanmin(plottable)
             max = np.nanmax(plottable)
-            plottable = (plottable - min) / (max - min)
+            # print("min, max: {}, {}".format(min, max))
+            if max != min:
+                plottable = (plottable - min) / (max - min)
             # assign the plottable data to the correct channel
             self.rgba[:, :, self._CHANNEL_MAP[channel]] = plottable
         # trigger the cross section mpl object to update the overlay
