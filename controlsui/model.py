@@ -1,7 +1,7 @@
 import enaml
 from enaml.qt.qt_application import QtApplication
 from atom.api import (Atom, observe, Typed, Int, List, Float, Bool, Dict,
-                      Coerced, Enum)
+                      Coerced, Enum, Unicode)
 import numpy as np
 import os
 import h5py
@@ -37,7 +37,7 @@ class Model(Atom):
     live_counts = Typed(np.ndarray)
     rgba = Typed(np.ndarray)
     delay = Int(10)
-    points_per_update = Int(100)
+    points_per_update = Int(1000)
     scan_running = Bool(False)
     rois = Dict()
     channel_rois = Dict()
@@ -51,11 +51,24 @@ class Model(Atom):
     emax_blue = Coerced(float)
     emin_green = Coerced(float)
     emax_green = Coerced(float)
+    roi_names = List()
+
+    image_roi = Unicode()
+    red_roi = Unicode()
+    green_roi = Unicode()
+    blue_roi = Unicode()
+
+    image_roi_index = Int(0)
+    red_roi_index = Int(0)
+    green_roi_index = Int(0)
+    blue_roi_index = Int(0)
 
     cs_aspect = Enum('equal', 'auto')
 
     _datapoints = List()
     _current_step = Int(0)
+
+    _dirty = Bool(False)
 
     _fig_cs = Typed(Figure)
     _fig_line = Typed(Figure)
@@ -96,6 +109,11 @@ class Model(Atom):
         self.rois = {k: v for k, v
                      in zip(root_data['xrfmap/detsum/roi_name'],
                             np.asarray(root_data['xrfmap/detsum/roi_limits']))}
+        self.roi_names = sorted(self.rois.keys())
+        self.image_roi = self.roi_names[0]
+        self.red_roi = self.roi_names[0]
+        self.green_roi = self.roi_names[0]
+        self.blue_roi = self.roi_names[0]
         print('rois: {}'.format(self.rois))
         if delay is not None:
             self.delay = delay
@@ -137,7 +155,10 @@ class Model(Atom):
     @observe('emin_red', 'emax_red', 'emin_blue', 'emax_blue', 'emin_green',
              'emax_green')
     def _rgb_energy_updated(self, changed):
-        self._recompute_overlay(channels=[changed['name'].split('_')[1]])
+        if changed['type'] == 'create':
+            return
+        print('rgb energy updated', changed)
+        self._dirty = True
 
     def reset_scan(self):
         """Helper function used entirely for testing/debugging/demoing the
@@ -152,6 +173,12 @@ class Model(Atom):
         self._current_step = 0
         if prev_state:
             self.scan_running = True
+
+    def redraw(self):
+        if self._dirty:
+            self._dirty = False
+            self._recompute_image()
+            self._recompute_overlay()
 
     def new_cursor_position(self, cc, rr):
         """Callback that needs to be registered with the cross section widget
@@ -191,9 +218,8 @@ class Model(Atom):
         self._ax_last.autoscale_view(tight=True)
         self._fig_line.canvas.draw()
 
-        self._recompute_image()
-        # update the overlay for all channels
-        self._recompute_overlay()
+        self._dirty = True
+
 
     def _recompute_image(self):
         energy_mask = (self.energy > self.emin) & (self.energy < self.emax)
@@ -207,7 +233,8 @@ class Model(Atom):
             # i think this is only thrown at the beginning
             print te
 
-    def set_roi(self, new_roi):
+    @observe('image_roi')
+    def set_roi(self, changed):
         """Helper function to set emin and emax based on a pre-determined ROI
 
         Parameters
@@ -215,7 +242,10 @@ class Model(Atom):
         new_roi : str
             new_roi should be a key of the `rois` dict
         """
-        energies = self.rois[new_roi]
+        try:
+            energies = self.rois[self.image_roi]
+        except KeyError:
+            return
 
         # suppress the changes
         self.emin = energies[0]
@@ -226,18 +256,21 @@ class Model(Atom):
                    'blue': {'min': 'emin_blue', 'max': 'emax_blue'},
                    'green': {'min': 'emin_green', 'max': 'emax_green'},}
 
-    def set_channel_roi(self, new_roi, channel):
-        energies = self.rois[new_roi]
+    @observe('red_roi', 'green_roi', 'blue_roi')
+    def set_channel_roi(self, changed):
+        channel = changed['name'].split('_')[0]
+        roi = changed['value']
+        try:
+            energies = self.rois[roi]
+        except KeyError:
+            return
         emin = energies[0]
         emax = energies[1]
 
         # suppress the notifications so as to trigger the expensive
         # recomputing once
-        with self.suppress_notifications():
-            setattr(self, self._ENERGY_MAP[channel]['min'], emin)
-            setattr(self, self._ENERGY_MAP[channel]['max'], emax)
-
-        self._recompute_overlay(channels=[channel])
+        setattr(self, 'emin_{}'.format(channel), emin)
+        setattr(self, 'emax_{}'.format(channel), emax)
 
     def _recompute_overlay(self, channels=None):
         """
@@ -271,6 +304,38 @@ class Model(Atom):
         # trigger the cross section mpl object to update the overlay
         self.cs.update_overlay(self.rgba)
 
+    def add_roi(self, roi_name, roi_tuple):
+        print roi_name, roi_tuple
+        # save the currently selected roi names
+        red_roi = self.red_roi
+        green_roi = self.green_roi
+        blue_roi = self.blue_roi
+        image_roi = self.image_roi
+        emin_red = self.emin_red
+        emax_red = self.emax_red
+        emin_green = self.emin_green
+        emax_green = self.emax_green
+        emin_blue = self.emin_blue
+        emax_blue = self.emax_blue
+        # update the roi stuff
+        self.roi_names.insert(0, roi_name)
+        roi_names = self.roi_names
+        self.rois[roi_name] = roi_tuple
+        with self.suppress_notifications():
+            self.roi_names = []
+        self.roi_names = roi_names
+        # reset the comboboxes back to the way they were
+        self.image_roi_index = self.roi_names.index(image_roi)
+        self.red_roi_index = self.roi_names.index(red_roi)
+        self.green_roi_index = self.roi_names.index(green_roi)
+        self.blue_roi_index = self.roi_names.index(blue_roi)
+        # reset the energy ranges back to the way they were
+        self.emin_red = emin_red
+        self.emax_red = emax_red
+        self.emin_blue = emin_blue
+        self.emax_blue = emax_blue
+        self.emin_green = emin_green
+        self.emax_green = emax_green
 
     @observe('alpha')
     def _alpha_changed(self, changed):
@@ -286,6 +351,7 @@ if __name__ == "__main__":
     app = QtApplication()
     main_view = Main()
     main_view.show()
+    main_view.redraw_timer.start()
     app.start()
 
 

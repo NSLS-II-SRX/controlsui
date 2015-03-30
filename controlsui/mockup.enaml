@@ -7,6 +7,7 @@ from enaml.stdlib.fields import FloatField, IntField
 from dataportal.replay.core import TimerButton
 from controlsui.model import Model
 
+FIELD_MAXIMUM = 1000000000.
 
 class ProgrammaticButton(PushButton):
     # copied from dataportal.replay.core
@@ -28,39 +29,47 @@ class TimerButton(ProgrammaticButton):
 
 enamldef ColorChannel(Container):
     attr color
+    attr min_ev
+    attr max_ev
+    attr cmb_index
+    attr roi_name
     constraints = [
         vbox(
             hbox(lbl, rois),
-            hbox(alpha0, alpha33, alpha66, alpha100, spacer),
+            hbox(min_field, max_field, save),
         ),
         align('v_center', lbl, rois),
     ]
     Label: lbl:
         text = '{} channel roi'.format(color)
     ComboBox: rois:
-        items << model.rois.keys()
+        items << model.roi_names
         hug_width = 'ignore'
-        selected_item ::
-            model.set_channel_roi(self.selected_item, color)
-    PushButton: alpha0:
-        text = 'Alpha 0'
+        index := cmb_index
+        selected_item >> roi_name
+    FloatField: min_field:
+        minimum = 0.
+        maximum = FIELD_MAXIMUM
+        value := min_ev
+    FloatField: max_field:
+        minimum = 0.
+        maximum = FIELD_MAXIMUM
+        value := max_ev
+    PushButton: save:
+        text = 'Save ROI'
         clicked ::
-            model.alpha = 0.
-    PushButton: alpha33:
-        text = 'Alpha 0.33'
-        clicked ::
-            model.alpha = 0.33
-    PushButton: alpha66:
-        text = 'Alpha 0.66'
-        clicked ::
-            model.alpha = 0.66
-    PushButton: alpha100:
-        text = 'Alpha 1'
-        clicked ::
-            model.alpha = 1.
+            model.add_roi('({}, {})'.format(min_ev, max_ev), (min_ev, max_ev))
+
 
 enamldef Main(MainWindow):
     attr model = Model()
+    alias redraw_timer
+
+    Timer: redraw_timer:
+        interval = 250
+        single_shot = False
+        timeout ::
+            model.redraw()
     Container:
         DockArea:
             layout = HSplitLayout(
@@ -130,56 +139,74 @@ enamldef Main(MainWindow):
                 Container:
                     constraints = [
                         vbox(
-                            hbox(lbl_min, min, min_ev, spacer),
-                            hbox(lbl_max, max, max_ev, spacer),
                             form,
+                            hbox(alpha0, alpha50, alpha100),
                             red,
                             green,
                             blue,
                         ),
-                        align('v_center', lbl_min, min, min_ev),
-                        align('v_center', lbl_max, max, max_ev)
+                        align('v_center', alpha0, alpha50, alpha100),
                     ]
-                    Label: lbl_min:
-                        text = 'min energy to plot'
-                    FloatField: min:
-                        minimum = 0.
-                        maximum << model.energy[-1]
-                        value := model.emin
-                    Label: min_ev:
-                        text = 'ev'
-                    Label: lbl_max:
-                        text = 'max energy to plot'
-                    FloatField: max:
-                        minimum = 0.
-                        maximum << model.energy[-1]
-                        value := model.emax
-                    Label: max_ev:
-                        text = 'ev'
                     Form: form:
+                        Label: lbl_min:
+                            text = 'min eV to plot'
+                        FloatField: min:
+                            minimum = 0.
+                            maximum = FIELD_MAXIMUM
+                            value := model.emin
+                        Label: lbl_max:
+                            text = 'max eV to plot'
+                        FloatField: max:
+                            minimum = 0.
+                            maximum = FIELD_MAXIMUM
+                            value := model.emax
                         Label:
                             text = 'grayscale_roi'
                         ComboBox: rois:
-                            items << model.rois.keys()
-                            selected_item ::
-                                model.set_roi(self.selected_item)
+                            items << model.roi_names
+                            index << model.image_roi_index
+                            selected_item >> model.image_roi
+                        Label:
+                            text = 'figure aspect ratio'
+                        ComboBox:
+                            items << list(Model.cs_aspect.items)
+                            selected_item >> model.cs_aspect
                         Label:
                             text = 'alpha level (0 <= a <=1)'
                         FloatField:
                             minimum = 0.
                             maximum = 1.
                             value := model.alpha
-                        Label:
-                            text = 'figure aspect ratio'
-                        ComboBox:
-                            items << list(Model.cs_aspect.items)
-                            selected_item >> model.cs_aspect
+                    PushButton: alpha0:
+                        text = 'Alpha 0'
+                        clicked ::
+                            model.alpha = 0.
+                    PushButton: alpha50:
+                        text = 'Alpha 0.50'
+                        clicked ::
+                            model.alpha = 0.50
+                    PushButton: alpha100:
+                        text = 'Alpha 1'
+                        clicked ::
+                            model.alpha = 1.
                     ColorChannel: red:
                         color = 'red'
+                        min_ev := model.emin_red
+                        max_ev := model.emax_red
+                        cmb_index := model.red_roi_index
+                        roi_name := model.red_roi
                     ColorChannel: green:
                         color = 'green'
+                        min_ev := model.emin_green
+                        max_ev := model.emax_green
+                        cmb_index := model.green_roi_index
+                        roi_name := model.green_roi
                     ColorChannel: blue:
                         color = 'blue'
+                        min_ev := model.emin_blue
+                        max_ev := model.emax_blue
+                        cmb_index := model.blue_roi_index
+                        roi_name := model.blue_roi
 
             DockItem:
                 name = 'primary image info'
