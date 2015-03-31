@@ -11,7 +11,7 @@ from matplotlib.axes import Axes
 from matplotlib.lines import Line2D
 import itertools
 import logging
-from bubblegum.backend.mpl import cross_section_2d as cs2d
+from xray_vision.backend.mpl import cross_section_2d as cs2d
 
 logger = logging.getLogger()
 
