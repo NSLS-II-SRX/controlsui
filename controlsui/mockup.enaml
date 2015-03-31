@@ -4,7 +4,6 @@ from enaml.core.api import *
 from atom.api import Typed, observe, Event, set_default
 from enaml.core.declarative import d_
 from enaml.stdlib.fields import FloatField, IntField
-from dataportal.replay.core import TimerButton
 from controlsui.model import Model
 
 FIELD_MAXIMUM = 1000000000.
