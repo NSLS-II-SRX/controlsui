@@ -17,7 +17,7 @@ logger = logging.getLogger()
 
 
 def get_root_data():
-    fname = '/home/edill/Downloads/root.h5'
+    fname = os.path.join(os.path.expanduser('~'), 'Downloads', 'root.h5')
     url = 'http://cars.uchicago.edu/gsecars/data/Xspress3Data/Root.h5'
     if os.path.exists(fname):
         mapfile = h5py.File(fname)
