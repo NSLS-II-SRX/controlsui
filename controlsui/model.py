@@ -32,17 +32,57 @@ def get_root_data():
 
 
 class Model(Atom):
+    """
+
+    Atom backend for raster scan GUI
+    """
+    # The following 5 attributes are for demoing purposes and will be removed
+    # once this widget is connected to the data portal or ophyd
+    # the data set that "live" data is being sourced from
     counts = Typed(np.ndarray)
-    energy = Typed(np.ndarray)
-    live_counts = Typed(np.ndarray)
-    rgba = Typed(np.ndarray)
+    #  time between data updates
     delay = Int(10)
+    # number of data points to add in each update
     points_per_update = Int(1000)
+    # is the scan currently running?
     scan_running = Bool(False)
+    # the current step in the scan. 0 -> counts.shape[0] * counts.shape[1]
+    _current_step = Int(0)
+    # the new datapoints
+    _datapoints = List()
+
+    # The z-axis of `counts`
+    energy = Typed(np.ndarray)
+    # The live data set
+    live_counts = Typed(np.ndarray)
+
+    # Color map of RGB overlay with an extra channel for alpha
+    # its shape --> [counts.shape[0]] x [counts.shape[1]] x 4
+    rgba = Typed(np.ndarray)
+
+    # dictionary of name: (emin, emax) pais defining the known rois
     rois = Dict()
-    channel_rois = Dict()
+    # The names of the energy rois --> sorted(rois.keys()). Used as the items
+    # for combo boxes in the enaml window
+    roi_names = List()
+    # the name of the rois currently selected as the raw data (image) and
+    # the overlay (red, green and blue)
+    image_roi = Unicode()
+    red_roi = Unicode()
+    green_roi = Unicode()
+    blue_roi = Unicode()
+    # The index of `image_roi` in the `roi_names` list. Used to make sure that
+    # the selected value of the roi combo boxes in the enaml window is correct
+    image_roi_index = Int(0)
+    red_roi_index = Int(0)
+    green_roi_index = Int(0)
+    blue_roi_index = Int(0)
+
+    # alpha for the overlay image
     alpha = Float()
-    # display properties
+
+    # emin and emax for the raw data (no suffix) and the three
+    # channels (defined by their suffix)
     emin = Coerced(float)
     emax = Coerced(float)
     emin_red = Coerced(float)
@@ -51,41 +91,47 @@ class Model(Atom):
     emax_blue = Coerced(float)
     emin_green = Coerced(float)
     emax_green = Coerced(float)
-    roi_names = List()
 
-    image_roi = Unicode()
-    red_roi = Unicode()
-    green_roi = Unicode()
-    blue_roi = Unicode()
-
-    image_roi_index = Int(0)
-    red_roi_index = Int(0)
-    green_roi_index = Int(0)
-    blue_roi_index = Int(0)
-
+    # the aspect ratio of the cross section.
+    # 'equal' makes the pixels square.
+    # 'auto' fills the window
     cs_aspect = Enum('equal', 'auto')
 
-    _datapoints = List()
-    _current_step = Int(0)
-
+    # flag that will trigger the image and the overlay to be redrawn on a
+    # `redraw_timer`
     _dirty = Bool(False)
+    # The time (in ms) between checks of `_dirty` to see if the mpl figure
+    # should be redrawn
+    redraw_timer = Int(250)
 
+    # the mpl figure for the cross-section widget
     _fig_cs = Typed(Figure)
+    # the mpl figure for the energy plots
     _fig_line = Typed(Figure)
+    # the axis that displays the energy spectrum that corresponds to the
+    # current position of the mouse cursor
     _ax_cursor = Typed(Axes)
+    # the mpl line artist holding the data that corresponds to the current
+    # position of the mouse cursor
     _cursor_artist = Typed(Line2D)
+    # the axis that displays the energy spectrum that corresponds to the
+    # last added data point
     _ax_last = Typed(Axes)
+    # the mpl line artist holding the data that corresponds to the last added
+    # data point
     _last_datapoint_artist = Typed(Line2D)
 
+    # the matplotlib object that manages the multiple axes required to
+    # display a cross section
     cs = Typed(cs2d.CSOverlay)
-
-    _energy_ranges_changed = Bool(False)
 
     def __init__(self, delay=None):
         super(Model, self).__init__()
+        if delay is not None:
+            self.delay = delay
+        # init some figures
         self._fig_line = Figure()
         self._fig_cs = Figure()
-        # self._fig_line.set_size_inches(4, 4)
         # set up the cursor line artist
         self._ax_cursor = self._fig_line.add_subplot(2, 1, 1)
         self._ax_cursor.set_ylabel('counts')
@@ -98,14 +144,15 @@ class Model(Atom):
         self._ax_last.set_xlabel('Energy (eV)')
         self._last_datapoint_artist, = self._ax_last.plot(
             [], [], '-', label='cursor position')
-
         self.cs = cs2d.CSOverlay(fig=self._fig_cs)
         self.cs.add_cursor_position_cb(self.new_cursor_position)
-
+        # download the root data
         root_data = get_root_data()
+        # set the data from which live data will be sourced
         self.counts = np.asarray(root_data['xrfmap/detsum/counts'])
         # energy is in kev, multiply by 1000
         self.energy = np.asarray(root_data['xrfmap/detsum/energy']) * 1000
+        # init the rois dict based on the hdf dataset of a root
         self.rois = {k: v for k, v
                      in zip(root_data['xrfmap/detsum/roi_name'],
                             np.asarray(root_data['xrfmap/detsum/roi_limits']))}
@@ -114,22 +161,19 @@ class Model(Atom):
         self.red_roi = self.roi_names[0]
         self.green_roi = self.roi_names[0]
         self.blue_roi = self.roi_names[0]
-        print('rois: {}'.format(self.rois))
-        if delay is not None:
-            self.delay = delay
-
         try:
             self.emin = 0
         except AttributeError:
             # thrown because the canvas is not yet created
             pass
         try:
-            self.emax = 100
+            self.emax = 1000
         except AttributeError:
             # thrown because the canvas is not yet created
             pass
 
         self.alpha = 0.5
+        self.cs_aspect = 'equal'
 
     @observe('counts')
     def _counts_changed(self, changed):
@@ -141,11 +185,10 @@ class Model(Atom):
         self.live_counts[:] = np.nan
         self.rgba = np.zeros(self.counts.shape[:2] + (4,))
         self.rgba[:, :, :-1] = np.nan
+        self._current_step = 0
 
     @observe('emin', 'emax')
     def _energy_changed(self, changed):
-        # self.cs.update_limit_func(cs2d.absolute_limit_factory((self.emin, self.emax)))
-        print('energy changed: {}'.format(changed))
         self._recompute_image()
 
     @observe('cs_aspect')
@@ -305,7 +348,21 @@ class Model(Atom):
         self.cs.update_overlay(self.rgba)
 
     def add_roi(self, roi_name, roi_tuple):
-        print roi_name, roi_tuple
+        """
+
+        Helper function that manages the state of all ROI comboboxes and float
+        fields related to the ROI selection.  This allows the list of
+        selectable ROIs in the combobox to be updated without triggering a
+        cascade of atom/enaml calls that will result in the fields/comboboxes
+        changing their values
+
+        Parameters
+        ----------
+        roi_name : str
+            The entry in `self.rois` to update or add
+        roi_tuple : tuple
+            (min_energy, max_energy) tuple
+        """
         # save the currently selected roi names
         red_roi = self.red_roi
         green_roi = self.green_roi
@@ -317,13 +374,12 @@ class Model(Atom):
         emax_green = self.emax_green
         emin_blue = self.emin_blue
         emax_blue = self.emax_blue
-        # update the roi stuff
-        self.roi_names.insert(0, roi_name)
-        roi_names = self.roi_names
+        # add the new (min, max) tuple to the roi dictionary
         self.rois[roi_name] = roi_tuple
         with self.suppress_notifications():
             self.roi_names = []
-        self.roi_names = roi_names
+        # trigger an update
+        self.roi_names = sorted(self.rois.keys())
         # reset the comboboxes back to the way they were
         self.image_roi_index = self.roi_names.index(image_roi)
         self.red_roi_index = self.roi_names.index(red_roi)
@@ -341,7 +397,6 @@ class Model(Atom):
     def _alpha_changed(self, changed):
         self.rgba[:, :, 3] = self.alpha
         self.cs.update_overlay(self.rgba)
-        print self.rgba
 
 
 if __name__ == "__main__":
