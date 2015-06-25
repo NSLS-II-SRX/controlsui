@@ -72,7 +72,7 @@ enamldef Main(MainWindow):
     Container:
         DockArea:
             layout = HSplitLayout(
-                'scan controls',
+                VSplitLayout('scan controls', 'motor control'),
                     VSplitLayout(
                         HSplitLayout(
                             VSplitLayout(
@@ -85,12 +85,12 @@ enamldef Main(MainWindow):
             )
             DockItem:
                 name = 'scan controls'
-                title = 'Scan Controls'
+                title = 'Demo Controls'
                 stretch = 0
                 Container:
                     constraints = [vbox(hbox(delay_info, delay),
                                         hbox(lump_info, lump),
-                                        timer_btn, reset_btn),
+                                        timer_btn, reset_btn,),
                                    align('v_center', delay_info, delay),
                                    align('v_center', lump_info, lump)]
                     Label: delay_info:
@@ -116,6 +116,47 @@ enamldef Main(MainWindow):
                         text = "Reset scan"
                         clicked ::
                             model.reset_scan()
+            DockItem:
+                name = 'motor control'
+                title = 'Real Motor control (mockup for now)'
+                Container:
+                    Form: form:
+                        Label:
+                            text = "x motor"
+                        Field: x_motor:
+                            text := model.x_motor
+                        Label:
+                            text = "x start"
+                        FloatField: x_start:
+                            value := model.x_start
+                        Label:
+                            text = "x step size"
+                        FloatField: x_step_size:
+                            value := model.x_step_size
+                        Label:
+                            text = "x num steps"
+                        IntField: x_num_steps:
+                            value := model.x_num_steps
+                        Label:
+                            text = "y motor"
+                        Field: y_motor:
+                            text := model.y_motor
+                        Label:
+                            text = "y start"
+                        FloatField: y_start:
+                            value := model.y_start
+                        Label:
+                            text = "y step size"
+                        FloatField: y_step_size:
+                            value := model.y_step_size
+                        Label:
+                            text = "y num steps"
+                        IntField: y_num_steps:
+                            value := model.y_num_steps
+                        Label:
+                            text << "scan dims = (%s x %s)" % (
+                                model.x_step_size * model.x_num_steps,
+                                model.y_step_size * model.y_num_steps)
             DockItem:
                 name = 'primary image'
                 title = 'Primary Image'

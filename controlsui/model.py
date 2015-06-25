@@ -1,7 +1,6 @@
 import enaml
 from enaml.qt.qt_application import QtApplication
-from atom.api import (Atom, observe, Typed, Int, List, Float, Bool, Dict,
-                      Coerced, Enum, Unicode)
+from atom.api import *
 import numpy as np
 import os
 import h5py
@@ -10,8 +9,10 @@ from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 from matplotlib.lines import Line2D
 import itertools
-import logging
 from xray_vision.backend.mpl import cross_section_2d as cs2d
+import matplotlib.pyplot as plt
+import logging
+
 
 logger = logging.getLogger()
 
@@ -125,21 +126,30 @@ class Model(Atom):
     # display a cross section
     cs = Typed(cs2d.CSOverlay)
 
+    # motor stuff
+    x_motor = Str()
+    y_motor = Str()
+    x_start = Float(0)
+    x_step_size = Float(0)
+    x_num_steps = Int(0)
+    y_start = Float(0)
+    y_step_size = Float(0)
+    y_num_steps = Int(0)
+
     def __init__(self, delay=None):
         super(Model, self).__init__()
         if delay is not None:
             self.delay = delay
         # init some figures
-        self._fig_line = Figure()
+        self._fig_line, (self._ax_cursor, self._ax_last) = plt.subplots(
+            nrows=2, sharex=True)
         self._fig_cs = Figure()
         # set up the cursor line artist
-        self._ax_cursor = self._fig_line.add_subplot(2, 1, 1)
         self._ax_cursor.set_ylabel('counts')
         self._ax_cursor.set_xlabel('Energy (eV)')
         self._cursor_artist, = self._ax_cursor.plot(
             [], [], '-', label='cursor position')
         # set up the artist to look at the last datapoint
-        self._ax_last = self._fig_line.add_subplot(2, 1, 2)
         self._ax_last.set_ylabel('counts')
         self._ax_last.set_xlabel('Energy (eV)')
         self._last_datapoint_artist, = self._ax_last.plot(
@@ -262,7 +272,6 @@ class Model(Atom):
         self._fig_line.canvas.draw()
 
         self._dirty = True
-
 
     def _recompute_image(self):
         energy_mask = (self.energy > self.emin) & (self.energy < self.emax)
