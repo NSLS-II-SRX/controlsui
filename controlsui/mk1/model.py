@@ -408,13 +408,3 @@ class Model(Atom):
         self.rgba[:, :, 3] = self.alpha
         self.cs.update_overlay(self.rgba)
 
-
-if __name__ == "__main__":
-    with enaml.imports():
-        from controlsui.mockup import Main
-
-    app = QtApplication()
-    main_view = Main()
-    main_view.show()
-    main_view.redraw_timer.start()
-    app.start()
