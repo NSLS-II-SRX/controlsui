@@ -10,7 +10,6 @@ from matplotlib.axes import Axes
 from matplotlib.lines import Line2D
 import itertools
 from xray_vision.backend.mpl import cross_section_2d as cs2d
-import matplotlib.pyplot as plt
 import logging
 
 
@@ -141,8 +140,10 @@ class Model(Atom):
         if delay is not None:
             self.delay = delay
         # init some figures
-        self._fig_line, (self._ax_cursor, self._ax_last) = plt.subplots(
-            nrows=2, sharex=True)
+        self._fig_line = Figure()
+        self._ax_cursor = self._fig_line.add_subplot(2, 1, 1)
+        self._ax_last = self._fig_line.add_subplot(2, 1, 2,
+                                                   sharex=self._ax_cursor)
         self._fig_cs = Figure()
         # set up the cursor line artist
         self._ax_cursor.set_ylabel('counts')
@@ -245,7 +246,6 @@ class Model(Atom):
         """
         # print('cc, rr: {}, {}'.format(cc, rr))
         counts = self.live_counts[rr, cc, :]
-        # print('counts shape: {} counts values: {}'.format(counts.shape, counts))
         self._cursor_artist.set_data(self.energy, counts)
         self._ax_cursor.relim(visible_only=True)
         self._ax_cursor.autoscale_view(tight=True)
@@ -259,13 +259,14 @@ class Model(Atom):
                 self.scan_running = False
                 break
             (x, y) = self._datapoints[self._current_step]
-            new_datapoints.append((x,y))
+            new_datapoints.append((x, y))
             # print('adding data for (x, y): ({}, {})'.format(x, y))
             self.live_counts[y, x, :] = self.counts[y, x, :]
             self._current_step += 1
 
         # update the last datapoint artist
-        self._last_datapoint_artist.set_data(self.energy, self.live_counts[y, x, :])
+        self._last_datapoint_artist.set_data(self.energy,
+                                             self.live_counts[y, x, :])
         self._ax_last.set_title('Last datapoint: ({}, {})'.format(x, y))
         self._ax_last.relim(visible_only=True)
         self._ax_last.autoscale_view(tight=True)
@@ -306,7 +307,7 @@ class Model(Atom):
     _CHANNEL_MAP = {'red': 0, 'green': 1, 'blue': 2}
     _ENERGY_MAP = {'red': {'min': 'emin_red', 'max': 'emax_red'},
                    'blue': {'min': 'emin_blue', 'max': 'emax_blue'},
-                   'green': {'min': 'emin_green', 'max': 'emax_green'},}
+                   'green': {'min': 'emin_green', 'max': 'emax_green'}}
 
     @observe('red_roi', 'green_roi', 'blue_roi')
     def set_channel_roi(self, changed):
@@ -417,5 +418,3 @@ if __name__ == "__main__":
     main_view.show()
     main_view.redraw_timer.start()
     app.start()
-
-
