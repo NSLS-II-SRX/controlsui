@@ -273,8 +273,8 @@ energy = np.array(root_data['xrfmap/detsum/energy'])
 def read_detector(y, x):
     detvals = {
         'det1': det1[y, x],
-        # 'det2': det2[y, x],
-        # 'det3': det3[y, x],
+        'det2': det2[y, x],
+        'det3': det3[y, x],
         # 'det4': det4[y, x],
         'energy': energy
     }
@@ -284,9 +284,9 @@ def read_detector(y, x):
 if __name__ == "__main__":
     plotter = Plotter()
     # plt.show()
-    plotter.imfig.canvas.show()
-    plotter.linefig.canvas.show()
-    plotter.imfig.canvas.draw()
-    plotter.linefig.canvas.draw()
-    plt.pause(.1)
+    # plotter.imfig.canvas.show()
+    # plotter.linefig.canvas.show()
+    # plotter.imfig.canvas.draw()
+    # plotter.linefig.canvas.draw()
+    # plt.pause(.1)
     example_scan_that_will_drive_the_plotter(plotter)
