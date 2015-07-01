@@ -1,3 +1,5 @@
+from __future__ import (division, unicode_literals, print_function,
+                        absolute_import)
 from controlsui.common import Plotter
 import os
 import h5py
@@ -15,11 +17,22 @@ def get_root_data():
     url = 'http://cars.uchicago.edu/gsecars/data/Xspress3Data/Root.h5'
     if os.path.exists(fname):
         mapfile = h5py.File(fname)
-        logger.debug('loaded data from disk')
+        print('loaded data from disk')
     else:
-        data = urllib.urlretrieve(url, fname)
+        print('downloading data from {}'.format(url))
+
+        def printer(blocknum, blocksize, totalsize):
+            percent = np.round(blocknum * blocksize / totalsize*100)
+            if percent > printer.percent:
+                printer.percent = percent
+                done = np.round(blocknum * blocksize / 1e6)
+                total = np.round(totalsize / 1e6)
+                print("%s%% done. %sMB downloaded of %sMB" % (percent, done,
+                                                              total))
+        printer.percent = 0
+        data = urllib.urlretrieve(url, fname, reporthook=printer)
         fname = data[0]
-        logger.debug('downloaded data from {}'.format(url))
+        print('downloaded data from {}'.format(url))
         mapfile = h5py.File(fname)
 
     return mapfile
