@@ -142,7 +142,7 @@ class Plotter(object):
         self._ax_last.legend(loc=0)
         self._draw()
 
-    def _draw(self, interval=.05):
+    def _draw(self, interval=.01):
         for fig in [self.imfig, self.linefig]:
             canvas = fig.canvas
             canvas.draw()
@@ -251,7 +251,6 @@ def example_scan_that_will_drive_the_plotter(plotter):
             }
             # send it as a list to support future, faster scans
             plotter.new_scan_data([event])
-            plt.pause(.05)
 
 def set_the_data(plotter):
     plotter.new_scan(im_shape=(det1.shape[0], det1.shape[0], 3))
