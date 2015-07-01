@@ -1,3 +1,8 @@
+import enaml
+from enaml.qt.qt_application import QtApplication
+with enaml.imports():
+    from controlsui.mk2.mockup import MainView, Model
+
 import os
 import h5py
 import numpy as np
@@ -7,6 +12,8 @@ import time as ttime
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import AxesGrid
 from collections import defaultdict
+from matplotlib.figure import Figure
+import urllib
 
 import logging
 logger = logging.getLogger(__name__)
@@ -40,9 +47,19 @@ roi_names = sorted(rois.keys())
 
 class Plotter(object):
     def __init__(self):
-        self.imfig = plt.figure()
+        try:
+            self.app = QtApplication()
+        except RuntimeError:
+            # only one QApp can exist
+            pass
+        self.draw_interval = 1 # second
+        self.last_draw_time = ttime.time()
+        self.imfig = Figure()
+        self.linefig = Figure()
+        self.model = Model(imfig=self.imfig, linefig=self.linefig)
+        self.ui = MainView(model=self.model)
+        self.ui.show()
 
-        self.linefig = plt.figure()
         self._ax_cursor = self.linefig.add_subplot(2, 1, 1)
         self._ax_last = self.linefig.add_subplot(2, 1, 2,
                                                  sharex=self._ax_cursor)
@@ -50,6 +67,8 @@ class Plotter(object):
         self._ax_last.set_title('Spectrum for last datapoint received')
 
     def new_scan(self, nx, ny, extent, channels, rois, energy):
+        nx += 1
+        ny += 1
         self._ax_cursor.cla()
         self._ax_last.cla()
         self._cursor_artists = {}
@@ -57,6 +76,7 @@ class Plotter(object):
         # create new plots for each
         self.roi_names = rois
         self.channel_names = channels
+        self.model.image_names = rois + channels
 
         for channel in self.channel_names:
             self._cursor_artists[channel], = self._ax_cursor.plot(
@@ -114,10 +134,11 @@ class Plotter(object):
         if x is not None and y is not None:
             col = int(x + 0.5)
             row = int(y + 0.5)
+            print('(col, row) = (%s, %s)' % (col, row))
             # grab the data name
             # data_name = event.axes.gid
             for channel in self.channel_names:
-                print('updating data for channel = %s' % channel)
+                # print('updating data for channel = %s' % channel)
                 data = self.channel_data[channel][row, col, :]
                 self._cursor_artists[channel].set_data(self.energy, data)
 
@@ -132,7 +153,7 @@ class Plotter(object):
         # grab the data name
         # data_name = event.axes.gid
         for channel in self.channel_names:
-            print('updating data for channel = %s' % channel)
+            # print('updating data for channel = %s' % channel)
             data = self.channel_data[channel][row, col, :]
             self._last_artists[channel].set_data(self.energy, data)
 
@@ -143,11 +164,14 @@ class Plotter(object):
         self._draw()
 
     def _draw(self, interval=.01):
-        for fig in [self.imfig, self.linefig]:
-            canvas = fig.canvas
-            canvas.draw()
-            plt.show(block=False)
-            canvas.start_event_loop(interval)
+        if ttime.time() - self.last_draw_time > self.draw_interval:
+            print('redrawing plot')
+            for fig in [self.imfig, self.linefig]:
+                canvas = fig.canvas
+                canvas.draw()
+                plt.show(block=False)
+                canvas.start_event_loop(interval)
+                self.last_draw_time = ttime.time()
 
     def new_scan_data(self, events):
         """Callback that accepts events or event-like dicts
@@ -169,18 +193,42 @@ class Plotter(object):
                 if k in self.channel_names:
                     arr = self.channel_data[k]
                     # store the raw mca spectrum
-                    arr[x, y, :] = v
+                    arr[y, x, :] = v
                     # grab the summed mca spectrum
                     arr = self.images[k].get_array()
                     arr[x, y] = np.sum(v)
                     # update the image
                     self.images[k].set_array(arr)
+                    if self.model.autoscale[self.model.image_names.index(k)]:
+                        clim = (arr.min(), arr.max())
+                        self.model.clim_min[self.model.image_names.index(k)] = clim[0]
+                        self.model.clim_max[self.model.image_names.index(k)] = clim[1]
+                    else:
+                        i0 = self.model.clim_min[
+                            self.model.image_names.index(k)]
+                        i1 = self.model.clim_max[
+                            self.model.image_names.index(k)]
+                        clim = (i0, i1)
+                    self.images[k].set_clim(clim)
+
                 # add the roi data to the imshow
                 elif k in rois:
                     arr = self.images[k].get_array()
                     arr[x, y] = v
                     self.images[k].set_array(arr)
-            self._draw_last_spectrum(x, y)
+                    if self.model.autoscale[self.model.image_names.index(k)]:
+                        clim = (arr.min(), arr.max())
+                        self.model.clim_min[self.model.image_names.index(k)] = clim[0]
+                        self.model.clim_max[self.model.image_names.index(k)] = clim[1]
+                    else:
+                        i0 = self.model.clim_min[
+                            self.model.image_names.index(k)]
+                        i1 = self.model.clim_max[
+                            self.model.image_names.index(k)]
+                        clim = (i0, i1)
+                    self.images[k].set_clim(clim)
+
+            self._draw_last_spectrum(y, x)
 
 
 
@@ -252,21 +300,18 @@ def example_scan_that_will_drive_the_plotter(plotter):
             # send it as a list to support future, faster scans
             plotter.new_scan_data([event])
 
-def set_the_data(plotter):
-    plotter.new_scan(im_shape=(det1.shape[0], det1.shape[0], 3))
-    plotter._rgb.red = np.sum(det1, axis=2)
-    plotter._rgb.draw
 
 print('loading det1')
 det1 = np.array(root_data['xrfmap/det1/counts'])
-# det1 = (det1 - det1.min()) / (det1.max() - det1.min()) * 255
 print('loading det2')
 det2 = np.array(root_data['xrfmap/det2/counts'])
-# det2 = (det2 - det2.min()) / (det2.max() - det2.min()) * 255
 print('loading det3')
 det3 = np.array(root_data['xrfmap/det3/counts'])
+print('loading det4')
+det4 = np.array(root_data['xrfmap/det4/counts'])
+# det1 = (det1 - det1.min()) / (det1.max() - det1.min()) * 255
+# det2 = (det2 - det2.min()) / (det2.max() - det2.min()) * 255
 # det3 = (det3 - det3.min()) / (det3.max() - det3.min()) * 255
-# det4 = np.array(root_data['xrfmap/det4/counts'])
 energy = np.array(root_data['xrfmap/detsum/energy'])
 
 def read_detector(y, x):
@@ -274,7 +319,7 @@ def read_detector(y, x):
         'det1': det1[y, x],
         'det2': det2[y, x],
         'det3': det3[y, x],
-        # 'det4': det4[y, x],
+        'det4': det4[y, x],
         'energy': energy
     }
     return detvals
@@ -282,10 +327,11 @@ def read_detector(y, x):
 
 if __name__ == "__main__":
     plotter = Plotter()
+    plotter.ui.show()
     # plt.show()
     # plotter.imfig.canvas.show()
     # plotter.linefig.canvas.show()
     # plotter.imfig.canvas.draw()
     # plotter.linefig.canvas.draw()
     # plt.pause(.1)
-    example_scan_that_will_drive_the_plotter(plotter)
+    # example_scan_that_will_drive_the_plotter(plotter)

@@ -1,0 +1,66 @@
+from enaml.widgets.api import *
+from enaml.layout.api import *
+from enaml.core.api import *
+from enaml.stdlib.fields import FloatField
+from atom.api import *
+from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+
+enamldef MainView(MainWindow): main:
+    attr model
+
+    Container:
+        DockArea:
+            layout = VSplitLayout(
+                HSplitLayout('images', 'image control'),
+                'lines'
+            )
+            DockItem:
+                name = 'image control'
+                Container:
+                    Looper:
+                        iterable << sorted(model.image_names)
+                        Form:
+                            Label:
+                                text << loop_item
+                            CheckBox:
+                                text << "Autoscale"
+                                checked := model.autoscale[
+                                    model.image_names.index(loop_item)]
+                            Label:
+                                text << "%s min" % loop_item
+                            FloatField:
+                                value := model.clim_min[
+                                    model.image_names.index(loop_item)]
+                            Label:
+                                text << "%s max" % loop_item
+                            FloatField:
+                                value := model.clim_max[
+                                    model.image_names.index(loop_item)]
+            DockItem:
+                name = 'images'
+                Container:
+                    MPLCanvas:
+                        figure << model.imfig
+                        toolbar_visible = True
+            DockItem:
+                name = 'lines'
+                Container:
+                    MPLCanvas:
+                        figure << model.linefig
+                        toolbar_visible = True
+
+class Model(Atom):
+    imfig = Typed(Figure)
+    linefig = Typed(Figure)
+    autoscale = ContainerList(item=bool)
+    clim_min = ContainerList(item=float)
+    clim_max = ContainerList(item=float)
+    image_names = ContainerList(item=str)
+
+    @observe('image_names')
+    def new_names(self, changed):
+        print(changed)
+        self.autoscale = [True] * len(self.image_names)
+        self.clim_min = [0.] * len(self.image_names)
+        self.clim_max = [1.] * len(self.image_names)
