@@ -1,4 +1,4 @@
-from __future__ import (division, unicode_literals, print_function,
+from __future__ import (division, print_function,
                         absolute_import)
 from controlsui.common import Plotter
 import os

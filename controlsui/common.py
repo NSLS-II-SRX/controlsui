@@ -1,4 +1,4 @@
-from __future__ import (unicode_literals, division, print_function,
+from __future__ import (division, print_function,
                         absolute_import)
 
 import enaml
@@ -186,6 +186,9 @@ class Plotter(object):
     ----------
     draw_interval : int
         The time (in seconds) between calls to update the GUI
+    gui_time : float
+        The time (in seconds) that the GUI should block the main thread so that
+        it can be responsive
     imfig : matplotlib.figure.Figure
         The figure that holds the MxN grid of images
     linefig : matplotlib.figure.Figure
@@ -237,6 +240,7 @@ class Plotter(object):
         except RuntimeError:
             # only one QApp can exist
             pass
+        self.gui_time = .01
         self.draw_interval = 1 # second
         self.last_draw_time = ttime.time()
         self.imfig = Figure()
@@ -262,6 +266,9 @@ class Plotter(object):
         self.roi_names = rois
         self.channel_names = channels
         self.model.image_names = rois + channels
+        # stash the extent, so that we can transform the mouse position back
+        # to image pixels
+        self.extent = extent
 
         for channel in self.channel_names:
             self._cursor_artists[channel], = self._ax_cursor.plot(
@@ -293,12 +300,11 @@ class Plotter(object):
             # cbar_size="7%",
             # cbar_pad="2%",
         )
-
         for data_name, ax in zip(data_labels, self.grid.axes_all):
             print('adding imshow for %s' % data_name)
             ax.annotate(data_name, (.5, 1), xycoords="axes fraction")
             ax.gid = data_name
-            self.images[data_name] = ax.imshow(np.zeros((self.nx, self.ny)),
+            self.images[data_name] = ax.imshow(np.zeros((self.ny, self.nx)),
                                           extent=extent,
                                           interpolation='nearest')
         self.imfig.canvas.mpl_connect('motion_notify_event',
@@ -320,14 +326,19 @@ class Plotter(object):
         x, y = event.xdata, event.ydata
         print('(x, y) = (%s, %s)' % (x, y))
         if x is not None and y is not None:
-            col = int(x + 0.5)
-            row = int(y + 0.5)
-            print('(col, row) = (%s, %s)' % (col, row))
+            col = int((x + np.abs(self.extent[0])) /
+                      (self.extent[1] - self.extent[0]) *
+                      self.nx + .5)
+            row = int((y + np.abs(self.extent[2])) /
+                      (self.extent[3] - self.extent[2]) * self.ny + .5)
+            print('(x, y) = (%s, %s)' % (x, y))
+            print('(row, col) = (%s, %s)' % (row, col))
             # grab the data name
             # data_name = event.axes.gid
             for channel in self.channel_names:
                 # print('updating data for channel = %s' % channel)
-                data = self.channel_data[channel][row, col, :]
+                data = self.channel_data[channel]
+                data = data[row, col, :]
                 self._cursor_artists[channel].set_data(self.energy, data)
 
             self._ax_cursor.relim(visible_only=True)
@@ -337,14 +348,14 @@ class Plotter(object):
             self._ax_cursor.legend(loc=0)
         self._draw()
 
-    def _draw(self, interval=.01):
+    def _draw(self):
         if ttime.time() - self.last_draw_time > self.draw_interval:
             print('redrawing plot')
             for fig in [self.imfig, self.linefig]:
                 canvas = fig.canvas
                 canvas.draw()
                 plt.show(block=False)
-                canvas.start_event_loop(interval)
+                canvas.start_event_loop(self.gui_time)
                 self.last_draw_time = ttime.time()
 
     def new_scan_data(self, events):
@@ -370,7 +381,7 @@ class Plotter(object):
                     arr[y, x, :] = v
                     # grab the summed mca spectrum
                     arr = self.images[k].get_array()
-                    arr[x, y] = np.sum(v)
+                    arr[y, x] = np.sum(v)
                     # update the image
                     self.images[k].set_array(arr)
                     # keep the scaling synchronized with the Atom model/view
@@ -391,7 +402,7 @@ class Plotter(object):
                 # add the roi data to the imshow
                 elif k in self.roi_names:
                     arr = self.images[k].get_array()
-                    arr[x, y] = v
+                    arr[y, x] = v
                     # raise Exception()
                     self.images[k].set_array(arr)
                     # keep the scaling synchronized with the Atom model/view
