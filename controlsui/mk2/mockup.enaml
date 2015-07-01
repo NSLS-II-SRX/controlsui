@@ -21,6 +21,7 @@ enamldef MainView(MainWindow): main:
                     Looper:
                         iterable << sorted(model.image_names)
                         Form:
+                            row_spacing = 0
                             Label:
                                 text << loop_item
                             CheckBox:

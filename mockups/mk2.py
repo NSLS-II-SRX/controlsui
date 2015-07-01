@@ -162,7 +162,7 @@ class Plotter(object):
 
         for data_name, ax in zip(data_labels, self.grid.axes_all):
             print('adding imshow for %s' % data_name)
-            # ax.annotate(data_name, (.5, 1), xycoords="axes fraction")
+            ax.annotate(data_name, (.5, 1), xycoords="axes fraction")
             ax.gid = data_name
             self.images[data_name] = ax.imshow(np.zeros((self.nx, self.ny)),
                                           extent=extent,
@@ -255,9 +255,10 @@ class Plotter(object):
                     self.images[k].set_clim(clim)
 
                 # add the roi data to the imshow
-                elif k in rois:
+                elif k in self.roi_names:
                     arr = self.images[k].get_array()
                     arr[x, y] = v
+                    # raise Exception()
                     self.images[k].set_array(arr)
                     # keep the scaling synchronized with the Atom model/view
                     if self.model.autoscale[self.model.image_names.index(k)]:
@@ -335,7 +336,8 @@ def example_scan_that_will_drive_the_plotter(plotter):
     # instruct the plotter to reset itself with a new image shape and extent
     plotter.new_scan(len(fast_positions), len(slow_positions),
                      extent=(left,right, bottom, top),
-                     channels=['det1', 'det2', 'det3', 'det4'], rois=[],
+                     channels=['det1', 'det2', 'det3', 'det4'],
+                     rois=['roi590:670'],
                      energy=energy)
 
     # do the step scan (or in this case, fake it up)
@@ -346,6 +348,10 @@ def example_scan_that_will_drive_the_plotter(plotter):
             # add the x and y positions
             detvals['x'] = fast_pos
             detvals['y'] = slow_pos
+            detvals['roi590:670'] = np.sum(detvals['det1'][590:670]+
+                                           detvals['det2'][590:670]+
+                                           detvals['det3'][590:670]+
+                                           detvals['det4'][590:670])
             # add the array indices for the x and y positions
             detvals['xidx'] = x_idx
             detvals['yidx'] = y_idx
