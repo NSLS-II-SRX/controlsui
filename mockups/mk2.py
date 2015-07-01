@@ -46,6 +46,57 @@ roi_names = sorted(rois.keys())
 
 
 class Plotter(object):
+    """Plotter that shows an MxN grid of raster scan images and two mca spectra
+
+    Attributes
+    ----------
+    draw_interval : int
+        The time (in seconds) between calls to update the GUI
+    imfig : matplotlib.figure.Figure
+        The figure that holds the MxN grid of images
+    linefig : matplotlib.figure.Figure
+        The figure that holds the 2x1 (rr x cc) grid of mca spectra
+    model : atom.Atom
+        The Atom model that holds the basic information that the GUI needs
+    ui : enaml.widgets.MainView
+        The Enaml widget that holds the MxN image figure, the 2x1 line
+        figure and the image scaling controls
+    _ax_cursor : matplotlib.axes.Axes
+        The axes that draws the artists that show the mca spectrum for the
+        location of the cursor
+    _ax_last : matplotlib.axes.Axes
+        The axes that draws the artists that show the mca spectrum for the
+        last received datapoint
+    _cursor_artists : dict
+        The dictionary of line artists that draw the mca spectrum for each
+        detector based on the cursor position
+    _last_artists : dict
+        The dictionary of line artists that draw the mca spectrum for each
+        detector based on the last received datapoint
+    self.nx : int
+        The number of datapoints in the x direction (cols)
+    self.ny : int
+        The number of datapoints in the y direction (rows)
+    self.roi_names : list
+        List of roi names. These roi names must be the data keys in the event
+        dictionary that gets passed to the `new_scan_data` function
+    self.channel_names : list
+        List of channel names. These are the detectors. These names must be
+        the data keys in the event dictionary that gets passed to the
+        `new_scan_data` function. These names are also the keys to the
+        `_cursor_artists` and `last_artists` dicts.
+    energy : list
+        The energy of the mca channels. Must (obviously?) be the same length
+        as the mca data
+    images : dict
+        The return value from the imshow calls in the imfig axes grid
+        (type is matplotlib.images.AxesImage).
+        Dict keys are self.roi_names + self.channel_names
+    channel_data : defaultdict
+        Dict keyed on self.channel_names. Shape is (ny, nx, len(energy))
+    grid : mpl_toolkits.axes_grid1.AxesGrid
+    """
+
     def __init__(self):
         try:
             self.app = QtApplication()
@@ -67,8 +118,8 @@ class Plotter(object):
         self._ax_last.set_title('Spectrum for last datapoint received')
 
     def new_scan(self, nx, ny, extent, channels, rois, energy):
-        nx += 1
-        ny += 1
+        self.nx = nx + 1
+        self.ny = ny + 1
         self._ax_cursor.cla()
         self._ax_last.cla()
         self._cursor_artists = {}
@@ -91,7 +142,8 @@ class Plotter(object):
         num_im = len(self.channel_names) + len(rois)
         data_labels = self.channel_names + self.roi_names
         self.images = {}
-        self.channel_data = defaultdict(lambda: np.zeros((ny, nx, 4096)))
+        self.channel_data = defaultdict(
+            lambda: np.zeros((self.ny, self.nx, 4096)))
         nrows = int(np.ceil(np.sqrt(num_im)))
         ncols = int(np.ceil(num_im / float(nrows)))
         # clear the iamge
@@ -110,13 +162,13 @@ class Plotter(object):
 
         for data_name, ax in zip(data_labels, self.grid.axes_all):
             print('adding imshow for %s' % data_name)
-            ax.annotate(data_name, (.5, 1), xycoords="axes fraction")
+            # ax.annotate(data_name, (.5, 1), xycoords="axes fraction")
             ax.gid = data_name
-            self.images[data_name] = ax.imshow(np.zeros((nx, ny)),
+            self.images[data_name] = ax.imshow(np.zeros((self.nx, self.ny)),
                                           extent=extent,
                                           interpolation='nearest')
-            self.imfig.canvas.mpl_connect('motion_notify_event',
-                                          self.new_cursor_position)
+        self.imfig.canvas.mpl_connect('motion_notify_event',
+                                      self.new_cursor_position)
 
         self._draw()
 
@@ -130,7 +182,9 @@ class Plotter(object):
         rr : int
             row
         """
+        # raise Exception("foo")
         x, y = event.xdata, event.ydata
+        print('(x, y) = (%s, %s)' % (x, y))
         if x is not None and y is not None:
             col = int(x + 0.5)
             row = int(y + 0.5)
@@ -147,20 +201,6 @@ class Plotter(object):
             self._ax_cursor.set_title('Cursor position: ({}, {})'.format(row,
                                                                          col))
             self._ax_cursor.legend(loc=0)
-        self._draw()
-
-    def _draw_last_spectrum(self, row, col):
-        # grab the data name
-        # data_name = event.axes.gid
-        for channel in self.channel_names:
-            # print('updating data for channel = %s' % channel)
-            data = self.channel_data[channel][row, col, :]
-            self._last_artists[channel].set_data(self.energy, data)
-
-        self._ax_last.relim(visible_only=True)
-        self._ax_last.autoscale_view(tight=True)
-        self._ax_last.set_title('Data point: ({}, {})'.format(row, col))
-        self._ax_last.legend(loc=0)
         self._draw()
 
     def _draw(self, interval=.01):
@@ -199,10 +239,13 @@ class Plotter(object):
                     arr[x, y] = np.sum(v)
                     # update the image
                     self.images[k].set_array(arr)
+                    # keep the scaling synchronized with the Atom model/view
                     if self.model.autoscale[self.model.image_names.index(k)]:
                         clim = (arr.min(), arr.max())
-                        self.model.clim_min[self.model.image_names.index(k)] = clim[0]
-                        self.model.clim_max[self.model.image_names.index(k)] = clim[1]
+                        self.model.clim_min[
+                            self.model.image_names.index(k)] = clim[0]
+                        self.model.clim_max[
+                            self.model.image_names.index(k)] = clim[1]
                     else:
                         i0 = self.model.clim_min[
                             self.model.image_names.index(k)]
@@ -216,10 +259,13 @@ class Plotter(object):
                     arr = self.images[k].get_array()
                     arr[x, y] = v
                     self.images[k].set_array(arr)
+                    # keep the scaling synchronized with the Atom model/view
                     if self.model.autoscale[self.model.image_names.index(k)]:
                         clim = (arr.min(), arr.max())
-                        self.model.clim_min[self.model.image_names.index(k)] = clim[0]
-                        self.model.clim_max[self.model.image_names.index(k)] = clim[1]
+                        self.model.clim_min[
+                            self.model.image_names.index(k)] = clim[0]
+                        self.model.clim_max[
+                            self.model.image_names.index(k)] = clim[1]
                     else:
                         i0 = self.model.clim_min[
                             self.model.image_names.index(k)]
@@ -230,6 +276,19 @@ class Plotter(object):
 
             self._draw_last_spectrum(y, x)
 
+    def _draw_last_spectrum(self, row, col):
+        # grab the data name
+        # data_name = event.axes.gid
+        for channel in self.channel_names:
+            # print('updating data for channel = %s' % channel)
+            data = self.channel_data[channel][row, col, :]
+            self._last_artists[channel].set_data(self.energy, data)
+
+        self._ax_last.relim(visible_only=True)
+        self._ax_last.autoscale_view(tight=True)
+        self._ax_last.set_title('Data point: ({}, {})'.format(row, col))
+        self._ax_last.legend(loc=0)
+        self._draw()
 
 
 def example_scan_that_will_drive_the_plotter(plotter):
@@ -276,7 +335,7 @@ def example_scan_that_will_drive_the_plotter(plotter):
     # instruct the plotter to reset itself with a new image shape and extent
     plotter.new_scan(len(fast_positions), len(slow_positions),
                      extent=(left,right, bottom, top),
-                     channels=['det1', 'det2', 'det3'], rois=[],
+                     channels=['det1', 'det2', 'det3', 'det4'], rois=[],
                      energy=energy)
 
     # do the step scan (or in this case, fake it up)
